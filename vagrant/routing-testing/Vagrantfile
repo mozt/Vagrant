@@ -1,0 +1,65 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+BOX_IMG = "debian/buster64"
+#BOX_VER = "9.5.0"
+BOX_COUNT = 4
+BOX_NAME = "routing-"
+BOX_CPU = 1
+BOX_MEM = 512
+
+Vagrant.configure("2") do |config|
+    (1..BOX_COUNT).each do |i|
+        config.vm.define BOX_NAME+"#{i}" do |subconfig|
+            subconfig.vm.box = BOX_IMG
+            #subconfig.vm.box_version = BOX_VER
+            subconfig.vm.hostname = BOX_NAME+"#{i}"
+
+            subconfig.vm.provider "virtualbox" do |v|
+                v.name = BOX_NAME+"#{i}"
+                v.memory = BOX_MEM
+                v.cpus = BOX_CPU
+            end
+            subconfig.vm.synced_folder ".", "/vagrant", disabled: true
+            subconfig.vm.network "public_network"
+            subconfig.vm.provision "shell", inline: "echo 1 > /proc/sys/net/ipv4/ip_forward &&
+            										 apt update &&
+            										 apt install --assume-yes tcpdump"
+        end
+    end
+    config.vm.define BOX_NAME+"1" do |subconfig|
+        subconfig.vm.network "private_network", ip: "192.168.101.1",
+        virtualbox__intnet: "net1"
+        subconfig.vm.network "private_network", ip: "192.168.102.1",
+        virtualbox__intnet: "net2"
+        subconfig.vm.provider "virtualbox" do |v|
+        	v.customize ["modifyvm", :id, "--nicpromisc3", "allow-all"]
+        	v.customize ["modifyvm", :id, "--nicpromisc4", "allow-all"]
+        end
+        subconfig.vm.provision "shell", inline: "iptables -t nat -A PREROUTING -s 192.168.101.2 -j DNAT --to-destination 192.168.102.2"
+    end
+    config.vm.define BOX_NAME+"2" do |subconfig|
+    	subconfig.vm.network "private_network", ip: "192.168.101.2",
+        virtualbox__intnet: "net1"
+        subconfig.vm.provider "virtualbox" do |v|
+        	v.customize ["modifyvm", :id, "--nicpromisc3", "allow-all"]
+        end
+        subconfig.vm.provision "shell", inline: "ip r add 192.168.102.0/24 via 192.168.101.1"
+    end
+    config.vm.define BOX_NAME+"3" do |subconfig|
+    	subconfig.vm.network "private_network", ip: "192.168.102.2",
+        virtualbox__intnet: "net2"
+        subconfig.vm.provider "virtualbox" do |v|
+        	v.customize ["modifyvm", :id, "--nicpromisc3", "allow-all"]
+        end
+        subconfig.vm.provision "shell", inline: "ip r add 192.168.101.0/24 via 192.168.102.1"
+    end
+    config.vm.define BOX_NAME+"4" do |subconfig|
+    	subconfig.vm.network "private_network", ip: "192.168.102.3",
+        virtualbox__intnet: "net2"
+        subconfig.vm.provider "virtualbox" do |v|
+        	v.customize ["modifyvm", :id, "--nicpromisc3", "allow-all"]
+        end
+        subconfig.vm.provision "shell", inline: "ip r add 192.168.101.0/24 via 192.168.102.1"
+    end
+end
